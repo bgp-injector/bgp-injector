@@ -1,0 +1,23 @@
+apiVersion: v1
+entries:
+  bgp-injector:
+  - apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-05-05T23:56:11.022029863Z"
+    description: Mutating webhook that injects a GoBGP sidecar into annotated pods
+      for Calico workload BGP peering
+    digest: 1afbb250419c03b2d4a97ab934047edef414fe2e5204d6f9e7039140850126f5
+    home: https://github.com/bgp-injector/bgp-injector
+    keywords:
+    - bgp
+    - calico
+    - networking
+    - webhook
+    name: bgp-injector
+    sources:
+    - https://github.com/bgp-injector/bgp-injector
+    type: application
+    urls:
+    - https://github.com/bgp-injector/bgp-injector/releases/download/bgp-injector-0.1.0/bgp-injector-0.1.0.tgz
+    version: 0.1.0
+generated: "2026-05-05T23:56:11.022042818Z"
