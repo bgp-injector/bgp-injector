@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: bgp-injector
+  namespace: bgp-injector
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bgp-injector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bgp-injector
+    spec:
+      serviceAccountName: bgp-injector
+      containers:
+      - name: speaker
+        image: ghcr.io/bgp-injector/speaker:latest
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: BGP_ROUTER_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        # Peer with the Calico node agent on this host. Defaults to the node IP.
+        # Override BGP_PEER_ADDRESS if Calico listens on a different address.
+        - name: BGP_PEER_ADDRESS
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        # Optional: set to open a separate IPv6 BGP session for IPv6 prefixes.
+        # - name: BGP_PEER_ADDRESS_V6
+        #   value: "fd00::1"
+        - name: BGP_LOCAL_AS
+          value: "65002"
+        - name: BGP_REMOTE_AS
+          value: "65001"
+        - name: BGP_GATE_ON_READY
+          value: "true"
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 64Mi

@@ -1,0 +1,21 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: bgp-injector-speaker
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: bgp-injector-speaker
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: bgp-injector-speaker
+subjects:
+- kind: ServiceAccount
+  name: bgp-injector
+  namespace: bgp-injector
