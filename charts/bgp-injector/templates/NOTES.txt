@@ -1,0 +1,9 @@
+BGP Injector installed in namespace {{ .Release.Namespace }}.
+
+The speaker DaemonSet is running on all nodes and watching for annotated pods.
+
+Annotate pods to announce routes:
+
+  bgp-injector.github.io/routedIPv4Prefixes: '["192.0.2.0/24"]'
+  bgp-injector.github.io/routedIPv6Prefixes: '["2001:db8::/32"]'  # optional
+  bgp-injector.github.io/gateOnReady: "true"                       # default: true

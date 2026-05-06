@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "bgp-injector.fullname" . }}
+  labels:
+    {{- include "bgp-injector.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "bgp-injector.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "bgp-injector.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "bgp-injector.serviceAccountName" . }}
+      containers:
+      - name: speaker
+        image: {{ include "bgp-injector.speakerImage" . }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: BGP_ROUTER_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: BGP_PEER_ADDRESS
+          {{- if .Values.bgpDefaults.peerAddress }}
+          value: {{ .Values.bgpDefaults.peerAddress | quote }}
+          {{- else }}
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+          {{- end }}
+        {{- if .Values.bgpDefaults.peerAddressV6 }}
+        - name: BGP_PEER_ADDRESS_V6
+          value: {{ .Values.bgpDefaults.peerAddressV6 | quote }}
+        {{- end }}
+        - name: BGP_LOCAL_AS
+          value: {{ .Values.bgpDefaults.localAs | quote }}
+        - name: BGP_REMOTE_AS
+          value: {{ .Values.bgpDefaults.remoteAs | quote }}
+        - name: BGP_GATE_ON_READY
+          value: {{ .Values.bgpDefaults.gateOnReady | quote }}
+        {{- with .Values.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
