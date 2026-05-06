@@ -2,11 +2,11 @@ apiVersion: v1
 entries:
   bgp-injector:
   - apiVersion: v2
-    appVersion: 0.2.0
-    created: "2026-05-06T00:30:08.229098153Z"
+    appVersion: 0.1.1
+    created: "2026-05-06T00:44:18.555359806Z"
     description: DaemonSet BGP speaker that announces routes for annotated pods via
       GoBGP, peering with the local Calico node
-    digest: 80e6085ed388d12b3518e0ba6290961bdab0b1eb0e4347a50d04fcc3a2420c6d
+    digest: 7dbeceacdc65248b2d624cbfc84582a64e01ca6efc050b988bdab017272aab2b
     keywords:
     - bgp
     - calico
@@ -17,8 +17,8 @@ entries:
     - https://github.com/bgp-injector/bgp-injector
     type: application
     urls:
-    - https://github.com/bgp-injector/bgp-injector/releases/download/bgp-injector-0.2.0/bgp-injector-0.2.0.tgz
-    version: 0.2.0
+    - https://github.com/bgp-injector/bgp-injector/releases/download/bgp-injector-0.1.1/bgp-injector-0.1.1.tgz
+    version: 0.1.1
   - apiVersion: v2
     appVersion: 0.1.0
     created: "2026-05-05T23:56:11.022029863Z"
@@ -38,4 +38,4 @@ entries:
     urls:
     - https://github.com/bgp-injector/bgp-injector/releases/download/bgp-injector-0.1.0/bgp-injector-0.1.0.tgz
     version: 0.1.0
-generated: "2026-05-06T00:30:08.229104632Z"
+generated: "2026-05-06T00:44:18.555377683Z"
