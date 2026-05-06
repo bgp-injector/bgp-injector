@@ -77,6 +77,7 @@ spec:
 | `bgpDefaults.peerAddress` | `""` | IPv4 BGP peer address; defaults to node IP if not set |
 | `bgpDefaults.peerAddressV6` | `""` | IPv6 BGP peer address; required to announce IPv6 prefixes |
 | `bgpDefaults.gateOnReady` | `true` | Withdraw routes when pod is not ready |
+| `bgpDefaults.gracefulRestartTime` | `0` | BGP graceful restart time in seconds (0 = disabled). When set, routes are held by the peer during restarts. |
 | `extraEnv` | `[]` | Additional environment variables for the speaker container |
 | `resources` | `{}` | Speaker container resource requests/limits |
 | `nodeSelector` | `{}` | Node selector for the DaemonSet |

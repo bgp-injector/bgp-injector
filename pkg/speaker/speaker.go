@@ -23,6 +23,10 @@ type Config struct {
 	// RouterID is the BGP router ID, typically the node's primary IPv4 address.
 	// Defaults to "0.0.0.0" if empty.
 	RouterID string
+	// GracefulRestartTime is the BGP graceful restart time in seconds advertised to
+	// peers. When non-zero, Calico will hold stale routes for this duration during
+	// a speaker restart, eliminating forwarding gaps. Set to 0 to disable.
+	GracefulRestartTime uint32
 }
 
 // Speaker manages GoBGP sessions and exposes announce/withdraw operations.
@@ -75,26 +79,39 @@ func (s *Speaker) Start(ctx context.Context) error {
 }
 
 func (s *Speaker) addPeer(ctx context.Context, addr string, afi api.Family_Afi) error {
-	if err := s.server.AddPeer(ctx, &api.AddPeerRequest{
-		Peer: &api.Peer{
-			Conf: &api.PeerConf{
-				NeighborAddress: addr,
-				PeerAsn:         s.cfg.RemoteAS,
-			},
-			AfiSafis: []*api.AfiSafi{{
-				Config: &api.AfiSafiConfig{
-					Family: &api.Family{Afi: afi, Safi: api.Family_SAFI_UNICAST},
-				},
-			}},
-			Timers: &api.Timers{
-				Config: &api.TimersConfig{
-					ConnectRetry:      10,
-					HoldTime:          90,
-					KeepaliveInterval: 30,
-				},
+	afiSafi := &api.AfiSafi{
+		Config: &api.AfiSafiConfig{
+			Family: &api.Family{Afi: afi, Safi: api.Family_SAFI_UNICAST},
+		},
+	}
+
+	peer := &api.Peer{
+		Conf: &api.PeerConf{
+			NeighborAddress: addr,
+			PeerAsn:         s.cfg.RemoteAS,
+		},
+		AfiSafis: []*api.AfiSafi{afiSafi},
+		Timers: &api.Timers{
+			Config: &api.TimersConfig{
+				ConnectRetry:      10,
+				HoldTime:          90,
+				KeepaliveInterval: 30,
 			},
 		},
-	}); err != nil {
+	}
+
+	if s.cfg.GracefulRestartTime > 0 {
+		peer.GracefulRestart = &api.GracefulRestart{
+			Enabled:             true,
+			RestartTime:         s.cfg.GracefulRestartTime,
+			NotificationEnabled: true,
+		}
+		afiSafi.MpGracefulRestart = &api.MpGracefulRestart{
+			Config: &api.MpGracefulRestartConfig{Enabled: true},
+		}
+	}
+
+	if err := s.server.AddPeer(ctx, &api.AddPeerRequest{Peer: peer}); err != nil {
 		return fmt.Errorf("adding peer %s: %w", addr, err)
 	}
 	s.log.Info("BGP peer configured", zap.String("peer", addr), zap.Uint32("remoteAS", s.cfg.RemoteAS))

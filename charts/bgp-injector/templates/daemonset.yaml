@@ -49,6 +49,10 @@ spec:
           value: {{ .Values.bgpDefaults.remoteAs | quote }}
         - name: BGP_GATE_ON_READY
           value: {{ .Values.bgpDefaults.gateOnReady | quote }}
+        {{- if .Values.bgpDefaults.gracefulRestartTime }}
+        - name: BGP_GRACEFUL_RESTART_TIME
+          value: {{ .Values.bgpDefaults.gracefulRestartTime | quote }}
+        {{- end }}
         {{- with .Values.extraEnv }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

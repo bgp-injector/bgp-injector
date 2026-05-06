@@ -20,7 +20,7 @@ func main() {
 	log, _ := zap.NewProduction()
 	defer log.Sync() //nolint:errcheck
 
-	spkCfg, defaults, err := configFromEnv()
+	spkCfg, defaults, gracefulRestart, err := configFromEnv()
 	if err != nil {
 		log.Fatal("invalid configuration", zap.Error(err))
 	}
@@ -47,41 +47,50 @@ func main() {
 		log.Fatal("starting BGP speaker", zap.Error(err))
 	}
 
-	watcher := speaker.NewWatcher(spk, defaults, nodeName, k8s, log)
+	watcher := speaker.NewWatcher(spk, defaults, nodeName, k8s, log, gracefulRestart)
 	watcher.Run(ctx)
 
 	spk.Stop()
 }
 
-func configFromEnv() (*speaker.Config, config.Defaults, error) {
+func configFromEnv() (*speaker.Config, config.Defaults, bool, error) {
 	localAS, err := parseUint32Env("BGP_LOCAL_AS")
 	if err != nil {
-		return nil, config.Defaults{}, err
+		return nil, config.Defaults{}, false, err
 	}
 	remoteAS, err := parseUint32Env("BGP_REMOTE_AS")
 	if err != nil {
-		return nil, config.Defaults{}, err
+		return nil, config.Defaults{}, false, err
 	}
 	peerAddress := os.Getenv("BGP_PEER_ADDRESS")
 	if peerAddress == "" {
-		return nil, config.Defaults{}, fmt.Errorf("BGP_PEER_ADDRESS is required")
+		return nil, config.Defaults{}, false, fmt.Errorf("BGP_PEER_ADDRESS is required")
 	}
 
 	gateOnReady := true
 	if v := os.Getenv("BGP_GATE_ON_READY"); v != "" {
 		gateOnReady, err = strconv.ParseBool(v)
 		if err != nil {
-			return nil, config.Defaults{}, fmt.Errorf("parsing BGP_GATE_ON_READY: %w", err)
+			return nil, config.Defaults{}, false, fmt.Errorf("parsing BGP_GATE_ON_READY: %w", err)
+		}
+	}
+
+	var gracefulRestartTime uint32
+	if v := os.Getenv("BGP_GRACEFUL_RESTART_TIME"); v != "" {
+		gracefulRestartTime, err = parseUint32Env("BGP_GRACEFUL_RESTART_TIME")
+		if err != nil {
+			return nil, config.Defaults{}, false, err
 		}
 	}
 
 	return &speaker.Config{
-		LocalAS:       localAS,
-		RemoteAS:      remoteAS,
-		PeerAddress:   peerAddress,
-		PeerAddressV6: os.Getenv("BGP_PEER_ADDRESS_V6"),
-		RouterID:      os.Getenv("BGP_ROUTER_ID"),
-	}, config.Defaults{GateOnReady: gateOnReady}, nil
+		LocalAS:             localAS,
+		RemoteAS:            remoteAS,
+		PeerAddress:         peerAddress,
+		PeerAddressV6:       os.Getenv("BGP_PEER_ADDRESS_V6"),
+		RouterID:            os.Getenv("BGP_ROUTER_ID"),
+		GracefulRestartTime: gracefulRestartTime,
+	}, config.Defaults{GateOnReady: gateOnReady}, gracefulRestartTime > 0, nil
 }
 
 func parseUint32Env(key string) (uint32, error) {

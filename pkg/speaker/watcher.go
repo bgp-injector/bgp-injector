@@ -35,26 +35,28 @@ type announcedRoutes struct {
 
 // Watcher watches pods on a specific node and manages BGP route announcements.
 type Watcher struct {
-	announcer Announcer
-	defaults  config.Defaults
-	nodeName  string
-	k8s       kubernetes.Interface
-	log       *zap.Logger
+	announcer      Announcer
+	defaults       config.Defaults
+	nodeName       string
+	k8s            kubernetes.Interface
+	log            *zap.Logger
+	gracefulRestart bool
 
 	mu        sync.Mutex
 	announced map[types.UID]*announcedRoutes
 	pending   map[types.UID]struct{} // pods with prefixes waiting to become ready
 }
 
-func NewWatcher(announcer Announcer, defaults config.Defaults, nodeName string, k8s kubernetes.Interface, log *zap.Logger) *Watcher {
+func NewWatcher(announcer Announcer, defaults config.Defaults, nodeName string, k8s kubernetes.Interface, log *zap.Logger, gracefulRestart bool) *Watcher {
 	return &Watcher{
-		announcer: announcer,
-		defaults:  defaults,
-		nodeName:  nodeName,
-		k8s:       k8s,
-		log:       log,
-		announced: make(map[types.UID]*announcedRoutes),
-		pending:   make(map[types.UID]struct{}),
+		announcer:      announcer,
+		defaults:       defaults,
+		nodeName:       nodeName,
+		k8s:            k8s,
+		log:            log,
+		gracefulRestart: gracefulRestart,
+		announced:      make(map[types.UID]*announcedRoutes),
+		pending:        make(map[types.UID]struct{}),
 	}
 }
 
@@ -80,6 +82,11 @@ func (w *Watcher) Run(ctx context.Context) {
 	factory.Start(ctx.Done())
 	factory.WaitForCacheSync(ctx.Done())
 	<-ctx.Done()
+
+	if w.gracefulRestart {
+		w.log.Info("shutting down with graceful restart enabled, routes held by peer")
+		return
+	}
 
 	w.log.Info("shutting down, withdrawing all routes")
 	w.mu.Lock()

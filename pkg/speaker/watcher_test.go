@@ -50,7 +50,7 @@ func (f *fakeAnnouncer) WithdrawIPv6(_ context.Context, cidr, nexthop string) er
 }
 
 func newTestWatcher(ann Announcer) *Watcher {
-	return NewWatcher(ann, config.Defaults{GateOnReady: true}, "node-1", fake.NewSimpleClientset(), zap.NewNop())
+	return NewWatcher(ann, config.Defaults{GateOnReady: true}, "node-1", fake.NewSimpleClientset(), zap.NewNop(), false)
 }
 
 func readyPod(uid types.UID, prefixes string, podIP string) *corev1.Pod {
@@ -162,7 +162,7 @@ func TestOnPod_NotReadyWithGateOnReady_DoesNotAnnounce(t *testing.T) {
 
 func TestOnPod_GateOnReadyFalse_AnnouncesWhenNotReady(t *testing.T) {
 	ann := &fakeAnnouncer{}
-	w := NewWatcher(ann, config.Defaults{GateOnReady: false}, "node-1", fake.NewSimpleClientset(), zap.NewNop())
+	w := NewWatcher(ann, config.Defaults{GateOnReady: false}, "node-1", fake.NewSimpleClientset(), zap.NewNop(), false)
 	pod := readyPod("uid-1", `["1.0.0.0/24"]`, "10.0.0.2")
 	pod.Status.Conditions[0].Status = corev1.ConditionFalse
 

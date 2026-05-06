@@ -16,6 +16,10 @@ bgpDefaults:
   peerAddressV6: ""
   # When true, routes are only announced while the pod's Ready condition is True.
   gateOnReady: true
+  # BGP graceful restart time in seconds. When non-zero, peers hold stale routes
+  # for this duration during a speaker restart, eliminating forwarding gaps.
+  # Requires Calico to support graceful restart (it does by default). Set to 0 to disable.
+  gracefulRestartTime: 0
 
 # Additional environment variables to inject into the speaker container.
 extraEnv: []
