@@ -43,6 +43,7 @@ type Watcher struct {
 
 	mu        sync.Mutex
 	announced map[types.UID]*announcedRoutes
+	pending   map[types.UID]struct{} // pods with prefixes waiting to become ready
 }
 
 func NewWatcher(announcer Announcer, defaults config.Defaults, nodeName string, k8s kubernetes.Interface, log *zap.Logger) *Watcher {
@@ -53,11 +54,14 @@ func NewWatcher(announcer Announcer, defaults config.Defaults, nodeName string, 
 		k8s:       k8s,
 		log:       log,
 		announced: make(map[types.UID]*announcedRoutes),
+		pending:   make(map[types.UID]struct{}),
 	}
 }
 
 // Run starts the pod informer and blocks until ctx is cancelled, then withdraws all announced routes.
 func (w *Watcher) Run(ctx context.Context) {
+	w.log.Info("watcher started", zap.String("node", w.nodeName))
+
 	factory := informers.NewSharedInformerFactoryWithOptions(
 		w.k8s,
 		0,
@@ -77,10 +81,11 @@ func (w *Watcher) Run(ctx context.Context) {
 	factory.WaitForCacheSync(ctx.Done())
 	<-ctx.Done()
 
+	w.log.Info("shutting down, withdrawing all routes")
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	for uid := range w.announced {
-		w.withdraw(context.Background(), uid)
+		w.withdraw(context.Background(), uid, w.log)
 	}
 }
 
@@ -102,6 +107,13 @@ func (w *Watcher) onPod(ctx context.Context, obj interface{}) {
 		return
 	}
 
+	log := w.log.With(
+		zap.String("pod", pod.Name),
+		zap.String("namespace", pod.Namespace),
+		zap.Strings("ipv4", cfg.IPv4Prefixes),
+		zap.Strings("ipv6", cfg.IPv6Prefixes),
+	)
+
 	nexthop4, nexthop6 := podIPs(pod)
 	ready := isPodReady(pod)
 	shouldAnnounce := !cfg.GateOnReady || ready
@@ -110,12 +122,26 @@ func (w *Watcher) onPod(ctx context.Context, obj interface{}) {
 	defer w.mu.Unlock()
 
 	_, wasAnnounced := w.announced[pod.UID]
+	_, wasPending := w.pending[pod.UID]
 
 	switch {
 	case shouldAnnounce && !wasAnnounced:
-		w.announce(ctx, pod, cfg, nexthop4, nexthop6)
+		if wasPending {
+			log.Info("pod ready, announcing routes")
+			delete(w.pending, pod.UID)
+		} else {
+			log.Info("new BGP-annotated pod, announcing routes")
+		}
+		w.announce(ctx, pod, cfg, nexthop4, nexthop6, log)
+
 	case !shouldAnnounce && wasAnnounced:
-		w.withdraw(ctx, pod.UID)
+		log.Info("pod not ready, withdrawing routes")
+		w.pending[pod.UID] = struct{}{}
+		w.withdraw(ctx, pod.UID, log)
+
+	case !shouldAnnounce && !wasPending:
+		log.Info("new BGP-annotated pod, waiting for readiness")
+		w.pending[pod.UID] = struct{}{}
 	}
 }
 
@@ -131,14 +157,25 @@ func (w *Watcher) onDelete(ctx context.Context, obj interface{}) {
 			return
 		}
 	}
+
+	log := w.log.With(zap.String("pod", pod.Name), zap.String("namespace", pod.Namespace))
+
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.withdraw(ctx, pod.UID)
+
+	if _, wasPending := w.pending[pod.UID]; wasPending {
+		log.Info("BGP-annotated pod deleted before becoming ready")
+		delete(w.pending, pod.UID)
+		return
+	}
+	if _, wasAnnounced := w.announced[pod.UID]; wasAnnounced {
+		log.Info("pod deleted, withdrawing routes")
+		w.withdraw(ctx, pod.UID, log)
+	}
 }
 
 // announce must be called with w.mu held.
-func (w *Watcher) announce(ctx context.Context, pod *corev1.Pod, cfg *config.PodBGPConfig, nexthop4, nexthop6 string) {
-	log := w.log.With(zap.String("pod", pod.Name), zap.String("namespace", pod.Namespace))
+func (w *Watcher) announce(ctx context.Context, pod *corev1.Pod, cfg *config.PodBGPConfig, nexthop4, nexthop6 string, log *zap.Logger) {
 	routes := &announcedRoutes{nexthop4: nexthop4, nexthop6: nexthop6}
 
 	for _, prefix := range cfg.IPv4Prefixes {
@@ -151,7 +188,7 @@ func (w *Watcher) announce(ctx context.Context, pod *corev1.Pod, cfg *config.Pod
 			continue
 		}
 		routes.ipv4Prefixes = append(routes.ipv4Prefixes, prefix)
-		log.Info("announced IPv4 prefix", zap.String("prefix", prefix), zap.String("nexthop", nexthop4))
+		log.Info("route added", zap.String("prefix", prefix), zap.String("nexthop", nexthop4))
 	}
 
 	for _, prefix := range cfg.IPv6Prefixes {
@@ -164,7 +201,7 @@ func (w *Watcher) announce(ctx context.Context, pod *corev1.Pod, cfg *config.Pod
 			continue
 		}
 		routes.ipv6Prefixes = append(routes.ipv6Prefixes, prefix)
-		log.Info("announced IPv6 prefix", zap.String("prefix", prefix), zap.String("nexthop", nexthop6))
+		log.Info("route added", zap.String("prefix", prefix), zap.String("nexthop", nexthop6))
 	}
 
 	if len(routes.ipv4Prefixes) > 0 || len(routes.ipv6Prefixes) > 0 {
@@ -173,7 +210,7 @@ func (w *Watcher) announce(ctx context.Context, pod *corev1.Pod, cfg *config.Pod
 }
 
 // withdraw must be called with w.mu held.
-func (w *Watcher) withdraw(ctx context.Context, uid types.UID) {
+func (w *Watcher) withdraw(ctx context.Context, uid types.UID, log *zap.Logger) {
 	routes, ok := w.announced[uid]
 	if !ok {
 		return
@@ -182,16 +219,16 @@ func (w *Watcher) withdraw(ctx context.Context, uid types.UID) {
 
 	for _, prefix := range routes.ipv4Prefixes {
 		if err := w.announcer.WithdrawIPv4(ctx, prefix, routes.nexthop4); err != nil {
-			w.log.Warn("failed to withdraw IPv4 prefix", zap.String("prefix", prefix), zap.Error(err))
+			log.Warn("failed to withdraw IPv4 prefix", zap.String("prefix", prefix), zap.Error(err))
 		} else {
-			w.log.Info("withdrew IPv4 prefix", zap.String("prefix", prefix))
+			log.Info("route withdrawn", zap.String("prefix", prefix))
 		}
 	}
 	for _, prefix := range routes.ipv6Prefixes {
 		if err := w.announcer.WithdrawIPv6(ctx, prefix, routes.nexthop6); err != nil {
-			w.log.Warn("failed to withdraw IPv6 prefix", zap.String("prefix", prefix), zap.Error(err))
+			log.Warn("failed to withdraw IPv6 prefix", zap.String("prefix", prefix), zap.Error(err))
 		} else {
-			w.log.Info("withdrew IPv6 prefix", zap.String("prefix", prefix))
+			log.Info("route withdrawn", zap.String("prefix", prefix))
 		}
 	}
 }
