@@ -240,6 +240,58 @@ func TestOnDelete_NotAnnounced_NoOp(t *testing.T) {
 	}
 }
 
+func TestOnPod_AnnotationRemoved_Withdraws(t *testing.T) {
+	ann := &fakeAnnouncer{}
+	w := newTestWatcher(ann)
+	pod := readyPod("uid-1", `["1.0.0.0/24"]`, "10.0.0.2")
+
+	w.onPod(context.Background(), pod)
+	// Remove annotations.
+	pod.Annotations = nil
+	w.onPod(context.Background(), pod)
+
+	ann.mu.Lock()
+	defer ann.mu.Unlock()
+	if len(ann.withdrawn) != 1 {
+		t.Errorf("expected 1 withdrawal after annotation removal, got %v", ann.withdrawn)
+	}
+}
+
+func TestOnPod_PrefixesChanged_ResyncsRoutes(t *testing.T) {
+	ann := &fakeAnnouncer{}
+	w := newTestWatcher(ann)
+	pod := readyPod("uid-1", `["1.0.0.0/24"]`, "10.0.0.2")
+
+	w.onPod(context.Background(), pod)
+	// Change to a different prefix.
+	pod.Annotations[config.AnnotationIPv4Prefixes] = `["2.0.0.0/24"]`
+	w.onPod(context.Background(), pod)
+
+	ann.mu.Lock()
+	defer ann.mu.Unlock()
+	if len(ann.withdrawn) != 1 || ann.withdrawn[0] != "v4:1.0.0.0/24:10.0.0.2" {
+		t.Errorf("expected old prefix withdrawn, got %v", ann.withdrawn)
+	}
+	if len(ann.announced) != 2 || ann.announced[1] != "v4:2.0.0.0/24:10.0.0.2" {
+		t.Errorf("expected new prefix announced, got %v", ann.announced)
+	}
+}
+
+func TestOnPod_PrefixesUnchanged_NoResync(t *testing.T) {
+	ann := &fakeAnnouncer{}
+	w := newTestWatcher(ann)
+	pod := readyPod("uid-1", `["1.0.0.0/24"]`, "10.0.0.2")
+
+	w.onPod(context.Background(), pod)
+	w.onPod(context.Background(), pod)
+
+	ann.mu.Lock()
+	defer ann.mu.Unlock()
+	if len(ann.announced) != 1 {
+		t.Errorf("expected no resync for unchanged annotations, got %d announces", len(ann.announced))
+	}
+}
+
 func TestOnPod_NoIPv4Address_SkipsIPv4Prefix(t *testing.T) {
 	ann := &fakeAnnouncer{}
 	w := newTestWatcher(ann)

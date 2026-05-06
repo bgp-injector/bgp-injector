@@ -103,15 +103,10 @@ func (w *Watcher) onPod(ctx context.Context, obj interface{}) {
 			zap.Error(err))
 		return
 	}
-	if !cfg.HasPrefixes() {
-		return
-	}
 
 	log := w.log.With(
 		zap.String("pod", pod.Name),
 		zap.String("namespace", pod.Namespace),
-		zap.Strings("ipv4", cfg.IPv4Prefixes),
-		zap.Strings("ipv6", cfg.IPv6Prefixes),
 	)
 
 	nexthop4, nexthop6 := podIPs(pod)
@@ -121,10 +116,29 @@ func (w *Watcher) onPod(ctx context.Context, obj interface{}) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	_, wasAnnounced := w.announced[pod.UID]
+	current, wasAnnounced := w.announced[pod.UID]
 	_, wasPending := w.pending[pod.UID]
 
+	if !cfg.HasPrefixes() {
+		if wasAnnounced {
+			log.Info("BGP annotations removed, withdrawing routes")
+			w.withdraw(ctx, pod.UID, log)
+		}
+		delete(w.pending, pod.UID)
+		return
+	}
+
+	log = log.With(zap.Strings("ipv4", cfg.IPv4Prefixes), zap.Strings("ipv6", cfg.IPv6Prefixes))
+
 	switch {
+	case shouldAnnounce && wasAnnounced:
+		if routesChanged(current, cfg, nexthop4, nexthop6) {
+			log.Info("BGP annotations changed, resyncing routes")
+			w.withdraw(ctx, pod.UID, log)
+			w.announce(ctx, pod, cfg, nexthop4, nexthop6, log)
+		}
+		delete(w.pending, pod.UID)
+
 	case shouldAnnounce && !wasAnnounced:
 		if wasPending {
 			log.Info("pod ready, announcing routes")
@@ -231,6 +245,30 @@ func (w *Watcher) withdraw(ctx context.Context, uid types.UID, log *zap.Logger) 
 			log.Info("route withdrawn", zap.String("prefix", prefix))
 		}
 	}
+}
+
+func routesChanged(current *announcedRoutes, cfg *config.PodBGPConfig, nexthop4, nexthop6 string) bool {
+	if current.nexthop4 != nexthop4 || current.nexthop6 != nexthop6 {
+		return true
+	}
+	return !prefixSetEqual(current.ipv4Prefixes, cfg.IPv4Prefixes) ||
+		!prefixSetEqual(current.ipv6Prefixes, cfg.IPv6Prefixes)
+}
+
+func prefixSetEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	counts := make(map[string]int, len(a))
+	for _, v := range a {
+		counts[v]++
+	}
+	for _, v := range b {
+		if counts[v]--; counts[v] < 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func isPodReady(pod *corev1.Pod) bool {
