@@ -1,0 +1,35 @@
+image:
+  repository: ghcr.io/bgp-injector/speaker
+  pullPolicy: IfNotPresent
+  # Defaults to .Chart.AppVersion
+  tag: ""
+
+# Cluster-wide BGP defaults. All values except gateOnReady are required.
+bgpDefaults:
+  localAs: ""
+  remoteAs: ""
+  # IPv4 BGP peer address. Defaults to the node IP (status.hostIP) if not set,
+  # which is appropriate when peering with the Calico node agent on the same host.
+  peerAddress: ""
+  # IPv6 BGP peer address. Optional; required only when announcing IPv6 prefixes
+  # via a separate IPv6 session. Leave empty to use MP-BGP over the IPv4 session.
+  peerAddressV6: ""
+  # When true, routes are only announced while the pod's Ready condition is True.
+  gateOnReady: true
+
+# Additional environment variables to inject into the speaker container.
+extraEnv: []
+
+serviceAccount:
+  create: true
+  # Defaults to the fullname of the release.
+  name: ""
+
+resources: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+
+nameOverride: ""
+fullnameOverride: ""
