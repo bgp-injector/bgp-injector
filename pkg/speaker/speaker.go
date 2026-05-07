@@ -75,7 +75,57 @@ func (s *Speaker) Start(ctx context.Context) error {
 		}
 	}
 
+	go s.monitorPeers(ctx)
+
 	return nil
+}
+
+func (s *Speaker) monitorPeers(ctx context.Context) {
+	_ = s.server.WatchEvent(ctx, &api.WatchEventRequest{
+		Peer: &api.WatchEventRequest_Peer{},
+	}, func(r *api.WatchEventResponse) {
+		ev := r.GetPeer()
+		if ev == nil || ev.Peer == nil || ev.Peer.State == nil || ev.Peer.Conf == nil {
+			return
+		}
+		peer := ev.Peer
+		log := s.log.With(zap.String("peer", peer.Conf.NeighborAddress))
+		switch {
+		case peer.State.SessionState == api.PeerState_ESTABLISHED:
+			s.logPeerEstablished(peer, log)
+		// Only warn on IDLE for state-change events, not the initial INIT dump.
+		case peer.State.SessionState == api.PeerState_IDLE &&
+			ev.Type == api.WatchEventResponse_PeerEvent_STATE:
+			log.Warn("BGP session down")
+		}
+	})
+}
+
+func (s *Speaker) logPeerEstablished(peer *api.Peer, log *zap.Logger) {
+	fields := []zap.Field{}
+	if gr := peer.GracefulRestart; gr != nil {
+		fields = append(fields,
+			zap.Bool("gracefulRestart", gr.GetEnabled()),
+			zap.Uint32("localRestartTime", gr.GetRestartTime()),
+			zap.Uint32("peerRestartTime", gr.GetPeerRestartTime()),
+		)
+	}
+	log.Info("BGP session established", fields...)
+
+	for _, af := range peer.AfiSafis {
+		if af.Config == nil || af.Config.Family == nil || af.State == nil || !af.State.GetEnabled() {
+			continue
+		}
+		family := af.Config.Family.Afi.String() + "/" + af.Config.Family.Safi.String()
+		afFields := []zap.Field{zap.String("family", family)}
+		if af.MpGracefulRestart != nil && af.MpGracefulRestart.State != nil {
+			afFields = append(afFields,
+				zap.Bool("grAdvertised", af.MpGracefulRestart.State.GetAdvertised()),
+				zap.Bool("grReceived", af.MpGracefulRestart.State.GetReceived()),
+			)
+		}
+		log.Info("BGP AfiSafi negotiated", afFields...)
+	}
 }
 
 func (s *Speaker) addPeer(ctx context.Context, addr string, afi api.Family_Afi) error {
