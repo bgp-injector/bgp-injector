@@ -92,7 +92,7 @@ func (s *Speaker) monitorPeers(ctx context.Context) {
 		log := s.log.With(zap.String("peer", peer.Conf.NeighborAddress))
 		switch {
 		case peer.State.SessionState == api.PeerState_ESTABLISHED:
-			s.logPeerEstablished(peer, log)
+			s.logPeerEstablished(ctx, peer, log)
 		// Only warn on IDLE for state-change events, not the initial INIT dump.
 		case peer.State.SessionState == api.PeerState_IDLE &&
 			ev.Type == api.WatchEventResponse_PeerEvent_STATE:
@@ -101,7 +101,11 @@ func (s *Speaker) monitorPeers(ctx context.Context) {
 	})
 }
 
-func (s *Speaker) logPeerEstablished(peer *api.Peer, log *zap.Logger) {
+func (s *Speaker) logPeerEstablished(ctx context.Context, peer *api.Peer, log *zap.Logger) {
+	// WatchEvent omits GracefulRestart; fetch the full peer state via ListPeer.
+	_ = s.server.ListPeer(ctx, &api.ListPeerRequest{Address: peer.Conf.NeighborAddress}, func(p *api.Peer) {
+		peer = p
+	})
 	fields := []zap.Field{}
 	if gr := peer.GracefulRestart; gr != nil && gr.GetEnabled() {
 		fields = append(fields,
