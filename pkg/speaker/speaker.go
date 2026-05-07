@@ -103,12 +103,14 @@ func (s *Speaker) monitorPeers(ctx context.Context) {
 
 func (s *Speaker) logPeerEstablished(peer *api.Peer, log *zap.Logger) {
 	fields := []zap.Field{}
-	if gr := peer.GracefulRestart; gr != nil {
+	if gr := peer.GracefulRestart; gr != nil && gr.GetEnabled() {
 		fields = append(fields,
-			zap.Bool("gracefulRestart", gr.GetEnabled()),
+			zap.Bool("gracefulRestart", true),
 			zap.Uint32("localRestartTime", gr.GetRestartTime()),
 			zap.Uint32("peerRestartTime", gr.GetPeerRestartTime()),
 		)
+	} else {
+		fields = append(fields, zap.Bool("gracefulRestart", false))
 	}
 	log.Info("BGP session established", fields...)
 
