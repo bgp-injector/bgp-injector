@@ -47,6 +47,8 @@ func main() {
 		log.Fatal("starting BGP speaker", zap.Error(err))
 	}
 
+	go spk.ServeHealth(ctx, 8080)
+
 	watcher := speaker.NewWatcher(spk, defaults, nodeName, k8s, log, gracefulRestart)
 	watcher.Run(ctx)
 

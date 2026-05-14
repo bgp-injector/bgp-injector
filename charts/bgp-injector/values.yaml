@@ -29,6 +29,18 @@ serviceAccount:
   # Defaults to the fullname of the release.
   name: ""
 
+# Rolling update strategy. maxSurge: 1 / maxUnavailable: 0 ensures a new pod
+# establishes its BGP session (verified by the readiness probe) before the old
+# pod is removed, preventing route withdrawals during rollouts.
+updateStrategy:
+  maxSurge: 1
+  maxUnavailable: 0
+
+# Minimum seconds a pod must be Ready before it is considered Available.
+# Combined with the readiness probe this provides a small buffer after BGP
+# establishment before the old pod is terminated.
+minReadySeconds: 10
+
 resources: {}
 nodeSelector: {}
 tolerations: []
