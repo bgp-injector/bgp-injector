@@ -85,6 +85,8 @@ spec:
 
 ## Calico configuration
 
+### BGPPeer
+
 Create a `BGPPeer` on each Calico node to accept sessions from the speaker DaemonSet pods. Use `peerSelector` to match the speaker pods by label so Calico automatically peers with whichever speaker pod is local to each node:
 
 ```yaml
@@ -99,3 +101,41 @@ spec:
 ```
 
 Refer to the [Calico BGP documentation](https://docs.tigera.io/calico/latest/networking/configuring/bgp) for full BGPPeer options.
+
+### FelixConfiguration
+
+Two FelixConfiguration settings are required for bgp-injector routes to work correctly.
+
+**`removeExternalRoutes: false`** — By default Felix removes any routes on workload interfaces that it did not program itself. Since bgp-injector routes are installed by BIRD (Calico's BGP daemon) rather than directly by Felix, Felix will delete them on every reconciliation cycle and flush the associated conntrack entries, causing periodic packet loss. Setting this to `false` tells Felix to leave routes with an unrecognised protocol alone.
+
+**`workloadSourceSpoofing: Any`** — Required for pods that send outbound traffic sourced from bgp-injector-advertised prefixes. Without this, Felix's RPF (reverse-path filtering) enforcement will drop packets whose source IP does not match the pod's own IP.
+
+```yaml
+apiVersion: projectcalico.org/v3
+kind: FelixConfiguration
+metadata:
+  name: default
+spec:
+  removeExternalRoutes: false
+  workloadSourceSpoofing: Any
+```
+
+### Pod spoofing annotation
+
+Each pod that needs to originate traffic from a bgp-injector-advertised prefix must declare those prefixes via the `cni.projectcalico.org/allowedSourcePrefixes` annotation. Calico uses this to install the necessary iptables/eBPF rules to permit outbound traffic with those source addresses.
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-app
+  annotations:
+    bgp-injector.github.io/routedIPv4Prefixes: '["192.0.2.0/24", "198.51.100.0/24"]'
+    cni.projectcalico.org/allowedSourcePrefixes: '["192.0.2.0/24", "198.51.100.0/24"]'
+spec:
+  containers:
+  - name: app
+    image: my-app:latest
+```
+
+The `allowedSourcePrefixes` annotation must list every prefix the pod will use as a source address. It does not need to match the bgp-injector prefixes exactly — only include the prefixes that the pod actually originates traffic from. Pods that only receive traffic on bgp-injector-advertised addresses (i.e. the traffic is forwarded elsewhere) do not need this annotation.
