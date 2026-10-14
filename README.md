@@ -82,6 +82,7 @@ spec:
 | `resources` | `{}` | Speaker container resource requests/limits |
 | `nodeSelector` | `{}` | Node selector for the DaemonSet |
 | `tolerations` | `[]` | Tolerations for the DaemonSet |
+| `priorityClassName` | `system-node-critical` | Pod priority class; critical priority lets kubelet admit speaker pods while the node reports pressure. Set to `""` to omit. |
 
 ## Calico configuration
 
