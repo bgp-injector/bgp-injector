@@ -2,7 +2,7 @@ apiVersion: v2
 name: bgp-injector
 description: DaemonSet BGP speaker that announces routes for annotated pods via GoBGP, peering with the local Calico node
 type: application
-version: 0.1.8
+version: 0.1.9
 appVersion: "0.1.6"
 keywords:
   - bgp
