@@ -41,6 +41,13 @@ updateStrategy:
 # establishment before the old pod is terminated.
 minReadySeconds: 10
 
+# Kubelet rejects new non-critical pods as Evicted while its node reports
+# pressure. With surge enabled, the DaemonSet controller then recreates the
+# surge pod in a loop, leaving thousands of Evicted pods on the node
+# (kubernetes/kubernetes#124388). Node-critical pods are still admitted, so
+# the speaker can roll out and keep announcing routes on a pressured node.
+priorityClassName: system-node-critical
+
 resources: {}
 nodeSelector: {}
 tolerations: []

@@ -24,6 +24,9 @@ spec:
       {{- end }}
     spec:
       serviceAccountName: {{ include "bgp-injector.serviceAccountName" . }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
       containers:
       - name: speaker
         image: {{ include "bgp-injector.speakerImage" . }}
